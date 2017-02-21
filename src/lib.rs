@@ -9,12 +9,13 @@ extern crate log;
 
 use toml_crate::{Decoder, Value};
 use cargo::core::Workspace;
+use cargo::core::Package;
 use cargo::util::important_paths::find_root_manifest_for_wd;
 use cargo::util::Config;
 use cargo::util::{toml, paths, errors};
 use rustc_serialize::Decodable;
 
-mod error {
+pub mod error {
     error_chain!{
         foreign_links {
             Io(::std::io::Error);
@@ -33,6 +34,7 @@ pub struct PackConfig {
 
 pub struct CargoPack<'cfg> {
     ws: Workspace<'cfg>,
+    package_name: Option<String>,
     pack_config: PackConfig,
 }
 
@@ -72,15 +74,17 @@ pub fn lookup(v: Value, path: &str) -> Option<Value> {
 
 
 impl<'cfg> CargoPack<'cfg> {
-    pub fn new<'a, P: Into<Option<&'a str>>>(config: &'cfg Config,
-                                             package_name: P)
-                                             -> Result<Self> {
+    pub fn new<'a, P: Into<Option<String>>>(config: &'cfg Config, package_name: P) -> Result<Self> {
+        let package_name = package_name.into();
         let root = find_root_manifest_for_wd(None, config.cwd())?;
-        let ws = Workspace::new(&root, config)?;
-        let pack_config: PackConfig = Self::decode_from_manifest_static(&ws, package_name)?;
+        let ws: Workspace<'cfg> = Workspace::new(&root, config)?;
+        let pack_config: PackConfig = Self::decode_from_manifest_static(&ws,
+                                                                        package_name.as_ref()
+                                                                            .map(|s| s.as_ref()))?;
         Ok(CargoPack {
             ws: ws,
             pack_config: pack_config,
+            package_name: package_name,
         })
     }
     pub fn ws(&self) -> &Workspace<'cfg> {
@@ -90,11 +94,27 @@ impl<'cfg> CargoPack<'cfg> {
         &self.pack_config
     }
 
-    fn decode_from_manifest_static<'a, T: Decodable, P: Into<Option<&'a str>>>(ws: &Workspace,
-                                                                               package_name: P)
-                                                                               -> Result<T> {
-        let manifest = if let Some(name) = package_name.into() {
-            let names = ws.members().filter(|p| p.package_id().name() == name).collect::<Vec<_>>();
+    pub fn package(&self) -> Result<&Package> {
+        if let Some(ref name) = self.package_name {
+            let packages = self.ws()
+                .members()
+                .filter(|p| p.package_id().name() == *name)
+                .collect::<Vec<_>>();
+            match packages.len() {
+                0 => return Err(format!("unknown package {}", name).into()),
+                1 => Ok(packages[0]),
+                _ => return Err(format!("ambiguous name {}", name).into()),
+            }
+        } else {
+            Ok(self.ws().current()?)
+        }
+    }
+
+    fn decode_from_manifest_static<T: Decodable>(ws: &Workspace,
+                                                 package_name: Option<&str>)
+                                                 -> Result<T> {
+        let manifest = if let Some(ref name) = package_name {
+            let names = ws.members().filter(|p| p.package_id().name() == *name).collect::<Vec<_>>();
             match names.len() {
                 0 => return Err(format!("unknown package {}", name).into()),
                 1 => names[0].manifest_path(),
@@ -103,6 +123,7 @@ impl<'cfg> CargoPack<'cfg> {
         } else {
             ws.current()?.manifest_path()
         };
+        debug!("reading manifest: {:?}", manifest);
 
         let contents = paths::read(manifest)?;
         let root = toml::parse(&contents, &manifest, ws.config())?;
@@ -113,9 +134,8 @@ impl<'cfg> CargoPack<'cfg> {
         Ok(Decodable::decode(&mut d).map_err(|e| errors::human(e.to_string()))?)
     }
 
-    pub fn decode_from_manifest<'a, T: Decodable, P: Into<Option<&'a str>>>(&self,
-                                                                            package_name: P)
-                                                                            -> Result<T> {
+    pub fn decode_from_manifest<'a, T: Decodable>(&self) -> Result<T> {
+        let package_name = self.package_name.as_ref().map(|s| s.as_ref());
         Self::decode_from_manifest_static(self.ws(), package_name)
     }
 
