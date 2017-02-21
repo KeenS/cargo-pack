@@ -72,11 +72,12 @@ pub fn lookup(v: Value, path: &str) -> Option<Value> {
 
 
 impl<'cfg> CargoPack<'cfg> {
-    pub fn new(config: &'cfg Config) -> Result<Self> {
-        // TODO: pass -p spec
+    pub fn new<'a, P: Into<Option<&'a str>>>(config: &'cfg Config,
+                                             package_name: P)
+                                             -> Result<Self> {
         let root = find_root_manifest_for_wd(None, config.cwd())?;
         let ws = Workspace::new(&root, config)?;
-        let pack_config: PackConfig = Self::decode_from_manifest_static(&ws)?;
+        let pack_config: PackConfig = Self::decode_from_manifest_static(&ws, package_name)?;
         Ok(CargoPack {
             ws: ws,
             pack_config: pack_config,
@@ -89,8 +90,20 @@ impl<'cfg> CargoPack<'cfg> {
         &self.pack_config
     }
 
-    fn decode_from_manifest_static<T: Decodable>(ws: &Workspace) -> Result<T> {
-        let manifest = ws.current()?.manifest_path();
+    fn decode_from_manifest_static<'a, T: Decodable, P: Into<Option<&'a str>>>(ws: &Workspace,
+                                                                               package_name: P)
+                                                                               -> Result<T> {
+        let manifest = if let Some(name) = package_name.into() {
+            let names = ws.members().filter(|p| p.package_id().name() == name).collect::<Vec<_>>();
+            match names.len() {
+                0 => return Err(format!("unknown package {}", name).into()),
+                1 => names[0].manifest_path(),
+                _ => return Err(format!("ambiguous name {}", name).into()),
+            }
+        } else {
+            ws.current()?.manifest_path()
+        };
+
         let contents = paths::read(manifest)?;
         let root = toml::parse(&contents, &manifest, ws.config())?;
         let root = Value::Table(root);
@@ -100,8 +113,10 @@ impl<'cfg> CargoPack<'cfg> {
         Ok(Decodable::decode(&mut d).map_err(|e| errors::human(e.to_string()))?)
     }
 
-    pub fn decode_from_manifest<T: Decodable>(&self) -> Result<T> {
-        Self::decode_from_manifest_static(self.ws())
+    pub fn decode_from_manifest<'a, T: Decodable, P: Into<Option<&'a str>>>(&self,
+                                                                            package_name: P)
+                                                                            -> Result<T> {
+        Self::decode_from_manifest_static(self.ws(), package_name)
     }
 
     pub fn files(&self) -> &[String] {
