@@ -81,6 +81,7 @@ impl<'cfg> CargoPack<'cfg> {
         let pack_config: PackConfig = Self::decode_from_manifest_static(&ws,
                                                                         package_name.as_ref()
                                                                             .map(|s| s.as_ref()))?;
+        debug!("config: {:?}", pack_config);
         Ok(CargoPack {
             ws: ws,
             pack_config: pack_config,
