@@ -175,7 +175,7 @@ impl<'cfg> CargoPack<'cfg> {
         let root = Value::Table(root);
         debug!("root: {:?}", root);
         let pack_root = lookup(root, "package.metadata.pack")
-            .expect("no package.metadate.pack found in Cargo.toml");
+            .expect("no package.metadata.pack found in Cargo.toml");
         let mut d = Decoder::new(pack_root);
         Ok(Decodable::decode(&mut d).map_err(|e| errors::human(e.to_string()))?)
     }
