@@ -4,10 +4,11 @@ name = "cargo-pack"
 version = "0.1.0"
 description = "an infrastructure library for 'cargo-pack'ers"
 repository = "https://github.com/KeenS/cargo-pack"
-documentation = "docs.rs/cargo-pack"
-licence = "MIT/Apache-2.0"
+documentation = "https://docs.rs/cargo-pack"
+license = "MIT/Apache-2.0"
 categories = ["development-tools"]
 keywords = ["cargo-subcommand", "cargo"]
+readme = "README.md"
 
 [dependencies]
 cargo = "0.16.0"
