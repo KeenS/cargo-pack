@@ -1,0 +1,5 @@
+# 0.1.0
+* first release
+* read config from the manifest
+* `package.metadata.pack.files`
+* `package.metadata.pack.default-packers`
