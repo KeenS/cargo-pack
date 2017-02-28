@@ -2,6 +2,9 @@
 authors = ["Sunrin SHIMURA (keen) <3han5chou7@gmail.com>"]
 name = "cargo-pack"
 version = "0.1.0"
+description = "an infrastructure library for 'cargo-pack'ers"
+repository = "https://github.com/KeenS/cargo-pack"
+documentation = "docs.rs/cargo-pack"
 
 [dependencies]
 cargo = "0.16.0"
