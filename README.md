@@ -1,4 +1,4 @@
-![https://docs.rs/cargo-pack/badge.svg](https://docs.rs/cargo-pack/badge.svg)
+[![https://docs.rs/cargo-pack/badge.svg](https://docs.rs/cargo-pack/badge.svg)](https://docs.rs/cargo-pack/0.1.0/cargo_pack/)
 
 # `cargo-pack`
 
