@@ -21,13 +21,13 @@ extern crate error_chain;
 extern crate log;
 
 
-use toml_crate::{Decoder, Value};
-use cargo::core::Workspace;
 use cargo::core::Package;
-use cargo::util::important_paths::find_root_manifest_for_wd;
+use cargo::core::Workspace;
+use cargo::util::{errors, paths, toml};
 use cargo::util::Config;
-use cargo::util::{toml, paths, errors};
+use cargo::util::important_paths::find_root_manifest_for_wd;
 use rustc_serialize::Decodable;
+use toml_crate::{Decoder, Value};
 
 /// Errors and related
 pub mod error {
