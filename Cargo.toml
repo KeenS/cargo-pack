@@ -1,7 +1,7 @@
 [package]
 authors = ["Sunrin SHIMURA (keen) <3han5chou7@gmail.com>"]
 name = "cargo-pack"
-version = "0.1.0"
+version = "0.2.0"
 description = "an infrastructure library for 'cargo-pack'ers"
 repository = "https://github.com/KeenS/cargo-pack"
 documentation = "https://docs.rs/cargo-pack"
@@ -11,8 +11,9 @@ keywords = ["cargo-subcommand", "cargo"]
 readme = "README.md"
 
 [dependencies]
-cargo = "0.16.0"
-error-chain = "0.9.0"
-log = "0.3.6"
-rustc-serialize = "0.3.22"
-toml = "0.2.0"
+cargo = "0.24.0"
+error-chain = "0.11.0"
+log = "0.4.1"
+serde = "1.0"
+toml = "0.4.5"
+serde_derive = "1.0.28"

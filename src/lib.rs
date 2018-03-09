@@ -10,41 +10,43 @@
 //! files = ["README.md"]
 //! ```
 
-
 #![deny(missing_docs)]
 extern crate cargo;
-extern crate rustc_serialize;
-extern crate toml as toml_crate;
 #[macro_use]
 extern crate error_chain;
 #[macro_use]
 extern crate log;
-
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
+extern crate toml as toml_crate;
 
 use cargo::core::Package;
 use cargo::core::Workspace;
-use cargo::util::{errors, paths, toml};
+use cargo::util::{paths, toml};
 use cargo::util::Config;
 use cargo::util::important_paths::find_root_manifest_for_wd;
-use rustc_serialize::Decodable;
-use toml_crate::{Decoder, Value};
+use toml_crate::Value;
+use serde::de::DeserializeOwned;
 
 /// Errors and related
 pub mod error {
     error_chain!{
         foreign_links {
             Io(::std::io::Error)
-                /// IO errors
+            /// IO related error
                 ;
-            Cargo(Box<::cargo::CargoError>)
-                /// Erros from the `cargo` crate
+            Toml(::toml_crate::de::Error)
+            /// TOML parse error
+                ;
+            Cargo(::cargo::CargoError)
+            /// Cargo error
                 ;
         }
     }
 }
 
 use error::*;
-
 
 /// Rust side of configurations in `Cargo.toml`
 ///
@@ -55,12 +57,13 @@ use error::*;
 /// default-packers = ["docker"]
 /// files = ["README.md"]
 /// ```
-#[derive(RustcDecodable, Debug)]
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "kebab-case")]
 pub struct PackConfig {
     /// files to pack into other than binaries
-    pub files: Vec<String>,
+    pub files: Option<Vec<String>>,
     /// reserved for future usage.
-    pub default_packers: Vec<String>,
+    pub default_packers: Option<Vec<String>>,
 }
 
 /// cargo-pack API
@@ -70,29 +73,20 @@ pub struct CargoPack<'cfg> {
     pack_config: PackConfig,
 }
 
-fn lookup(v: Value, path: &str) -> Option<Value> {
-    let ref path = match toml_crate::Parser::new(path).lookup() {
-        Some(path) => path,
-        None => return None,
-    };
-    let mut cur_value = v;
-    if path.is_empty() {
-        return Some(cur_value);
-    }
-
+fn lookup(mut value: Value, path: &[&str]) -> Option<Value> {
     for key in path {
-        match cur_value {
+        match value {
             Value::Table(mut hm) => {
                 // removing to take the ownership
-                match hm.remove(key) {
-                    Some(v) => cur_value = v,
+                match hm.remove(*key) {
+                    Some(v) => value = v,
                     None => return None,
                 }
             }
             Value::Array(mut v) => {
                 match key.parse::<usize>().ok() {
                     // NOTICE: may change the index
-                    Some(idx) if idx < v.len() => cur_value = v.remove(idx),
+                    Some(idx) if idx < v.len() => value = v.remove(idx),
                     _ => return None,
                 }
             }
@@ -100,10 +94,8 @@ fn lookup(v: Value, path: &str) -> Option<Value> {
         }
     }
 
-    Some(cur_value)
-
+    Some(value)
 }
-
 
 impl<'cfg> CargoPack<'cfg> {
     /// create a new CargoPack value
@@ -117,9 +109,8 @@ impl<'cfg> CargoPack<'cfg> {
         let package_name = package_name.into();
         let root = find_root_manifest_for_wd(None, config.cwd())?;
         let ws: Workspace<'cfg> = Workspace::new(&root, config)?;
-        let pack_config: PackConfig = Self::decode_from_manifest_static(&ws,
-                                                                        package_name.as_ref()
-                                                                            .map(|s| s.as_ref()))?;
+        let pack_config: PackConfig =
+            Self::decode_from_manifest_static(&ws, package_name.as_ref().map(|s| s.as_ref()))?;
         debug!("config: {:?}", pack_config);
         Ok(CargoPack {
             ws: ws,
@@ -155,11 +146,14 @@ impl<'cfg> CargoPack<'cfg> {
         }
     }
 
-    fn decode_from_manifest_static<T: Decodable>(ws: &Workspace,
-                                                 package_name: Option<&str>)
-                                                 -> Result<T> {
+    fn decode_from_manifest_static<T: DeserializeOwned>(
+        ws: &Workspace,
+        package_name: Option<&str>,
+    ) -> Result<T> {
         let manifest = if let Some(ref name) = package_name {
-            let names = ws.members().filter(|p| p.package_id().name() == *name).collect::<Vec<_>>();
+            let names = ws.members()
+                .filter(|p| p.package_id().name() == *name)
+                .collect::<Vec<_>>();
             match names.len() {
                 0 => return Err(format!("unknown package {}", name).into()),
                 1 => names[0].manifest_path(),
@@ -172,22 +166,24 @@ impl<'cfg> CargoPack<'cfg> {
 
         let contents = paths::read(manifest)?;
         let root = toml::parse(&contents, &manifest, ws.config())?;
-        let root = Value::Table(root);
         debug!("root: {:?}", root);
-        let pack_root = lookup(root, "package.metadata.pack")
+        let data = lookup(root, &["package", "metadata", "pack"])
             .expect("no package.metadata.pack found in Cargo.toml");
-        let mut d = Decoder::new(pack_root);
-        Ok(Decodable::decode(&mut d).map_err(|e| errors::human(e.to_string()))?)
+        data.try_into().map_err(Into::into)
     }
 
     /// decode a value from the manifest toml file.
-    pub fn decode_from_manifest<'a, T: Decodable>(&self) -> Result<T> {
+    pub fn decode_from_manifest<'a, T: DeserializeOwned>(&self) -> Result<T> {
         let package_name = self.package_name.as_ref().map(|s| s.as_ref());
         Self::decode_from_manifest_static(self.ws(), package_name)
     }
 
     /// returns files defined in `package.metadata.pack.files` in the Cargo.toml.
     pub fn files(&self) -> &[String] {
-        self.pack_config.files.as_ref()
+        self.pack_config
+            .files
+            .as_ref()
+            .map(AsRef::as_ref)
+            .unwrap_or(&[])
     }
 }
