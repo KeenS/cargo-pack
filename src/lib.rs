@@ -13,13 +13,13 @@
 #![deny(missing_docs)]
 extern crate cargo;
 #[macro_use]
-extern crate error_chain;
-#[macro_use]
 extern crate log;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate toml as toml_crate;
+#[macro_use]
+extern crate failure;
 
 use cargo::core::Package;
 use cargo::core::Workspace;
@@ -29,21 +29,11 @@ use cargo::util::important_paths::find_root_manifest_for_wd;
 use toml_crate::Value;
 use serde::de::DeserializeOwned;
 
+
 /// Errors and related
 pub mod error {
-    error_chain!{
-        foreign_links {
-            Io(::std::io::Error)
-            /// IO related error
-                ;
-            Toml(::toml_crate::de::Error)
-            /// TOML parse error
-                ;
-            Cargo(::cargo::CargoError)
-            /// Cargo error
-                ;
-        }
-    }
+    /// result type for the cargo-pack
+    pub type Result<T> = ::std::result::Result<T, ::failure::Error>;
 }
 
 use error::*;
@@ -131,18 +121,25 @@ impl<'cfg> CargoPack<'cfg> {
 
     /// returns the `Package` value of `package_name`
     pub fn package(&self) -> Result<&Package> {
-        if let Some(ref name) = self.package_name {
-            let packages = self.ws()
+        Self::find_package(self.ws(), self.package_name.as_ref().map(AsRef::as_ref))
+    }
+
+    fn find_package<'a, 'b>(
+        ws: &'a Workspace,
+        package_name: Option<&'b str>,
+    ) -> Result<&'a Package> {
+        if let Some(ref name) = package_name {
+            let packages = ws
                 .members()
                 .filter(|p| p.package_id().name() == *name)
                 .collect::<Vec<_>>();
             match packages.len() {
-                0 => return Err(format!("unknown package {}", name).into()),
+                0 => return Err(format_err!("unknown package {}", name)),
                 1 => Ok(packages[0]),
-                _ => return Err(format!("ambiguous name {}", name).into()),
+                _ => return Err(format_err!("ambiguous name {}", name)),
             }
         } else {
-            Ok(self.ws().current()?)
+            Ok(ws.current()?)
         }
     }
 
@@ -150,18 +147,7 @@ impl<'cfg> CargoPack<'cfg> {
         ws: &Workspace,
         package_name: Option<&str>,
     ) -> Result<T> {
-        let manifest = if let Some(ref name) = package_name {
-            let names = ws.members()
-                .filter(|p| p.package_id().name() == *name)
-                .collect::<Vec<_>>();
-            match names.len() {
-                0 => return Err(format!("unknown package {}", name).into()),
-                1 => names[0].manifest_path(),
-                _ => return Err(format!("ambiguous name {}", name).into()),
-            }
-        } else {
-            ws.current()?.manifest_path()
-        };
+        let manifest = Self::find_package(ws, package_name)?.manifest_path();
         debug!("reading manifest: {:?}", manifest);
 
         let contents = paths::read(manifest)?;
