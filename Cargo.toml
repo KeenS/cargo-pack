@@ -11,8 +11,8 @@ keywords = ["cargo-subcommand", "cargo"]
 readme = "README.md"
 
 [dependencies]
-cargo = "0.24.0"
 error-chain = "0.11.0"
+cargo = "0.26.0"
 log = "0.4.1"
 serde = "1.0"
 toml = "0.4.5"
