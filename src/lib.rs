@@ -96,7 +96,7 @@ impl<'cfg> CargoPack<'cfg> {
 
     pub fn new<'a, P: Into<Option<String>>>(config: &'cfg Config, package_name: P) -> Result<Self> {
         let package_name = package_name.into();
-        let root = find_root_manifest_for_wd(None, config.cwd())?;
+        let root = find_root_manifest_for_wd(config.cwd())?;
         let ws: Workspace<'cfg> = Workspace::new(&root, config)?;
         let pack_config: PackConfig =
             Self::decode_from_manifest_static(&ws, package_name.as_ref().map(|s| s.as_ref()))?;
@@ -130,7 +130,7 @@ impl<'cfg> CargoPack<'cfg> {
         if let Some(ref name) = package_name {
             let packages = ws
                 .members()
-                .filter(|p| p.package_id().name() == *name)
+                .filter(|p| &*p.package_id().name() == *name)
                 .collect::<Vec<_>>();
             match packages.len() {
                 0 => return Err(format_err!("unknown package {}", name)),
