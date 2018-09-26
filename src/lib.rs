@@ -23,12 +23,11 @@ extern crate failure;
 
 use cargo::core::Package;
 use cargo::core::Workspace;
-use cargo::util::{paths, toml};
-use cargo::util::Config;
 use cargo::util::important_paths::find_root_manifest_for_wd;
-use toml_crate::Value;
+use cargo::util::Config;
+use cargo::util::{paths, toml};
 use serde::de::DeserializeOwned;
-
+use toml_crate::Value;
 
 /// Errors and related
 pub mod error {
