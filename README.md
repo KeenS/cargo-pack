@@ -1,4 +1,4 @@
-[![https://docs.rs/cargo-pack/badge.svg](https://docs.rs/cargo-pack/badge.svg)](https://docs.rs/cargo-pack/0.1.0/cargo_pack/) [![Build Status](https://travis-ci.org/KeenS/cargo-pack.svg?branch=master)](https://travis-ci.org/KeenS/cargo-pack)
+[![https://docs.rs/cargo-pack/badge.svg](https://docs.rs/cargo-pack/badge.svg)](https://docs.rs/cargo-pack/0.5.0/cargo_pack/) [![Build Status](https://travis-ci.org/KeenS/cargo-pack.svg?branch=master)](https://travis-ci.org/KeenS/cargo-pack)
 
 # `cargo-pack`
 
