@@ -21,13 +21,13 @@ extern crate toml as toml_crate;
 #[macro_use]
 extern crate failure;
 
+use crate::toml_crate::Value;
 use cargo::core::Package;
 use cargo::core::Workspace;
 use cargo::util::important_paths::find_root_manifest_for_wd;
 use cargo::util::Config;
 use cargo::util::{paths, toml};
 use serde::de::DeserializeOwned;
-use crate::toml_crate::Value;
 
 /// Errors and related
 pub mod error {
@@ -89,7 +89,7 @@ fn lookup(mut value: Value, path: &[&str]) -> Option<Value> {
 impl<'cfg> CargoPack<'cfg> {
     /// create a new CargoPack value
     ///
-    /// ```rust
+    /// ```ignore
     /// let config = Config::default().unwrap();
     /// let pack = CargoPack::new(&config, None);
     /// ```
