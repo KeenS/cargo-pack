@@ -27,7 +27,7 @@ use cargo::util::important_paths::find_root_manifest_for_wd;
 use cargo::util::Config;
 use cargo::util::{paths, toml};
 use serde::de::DeserializeOwned;
-use toml_crate::Value;
+use crate::toml_crate::Value;
 
 /// Errors and related
 pub mod error {
@@ -35,7 +35,7 @@ pub mod error {
     pub type Result<T> = ::std::result::Result<T, ::failure::Error>;
 }
 
-use error::*;
+use crate::error::*;
 
 /// Rust side of configurations in `Cargo.toml`
 ///
