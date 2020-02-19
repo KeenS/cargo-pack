@@ -1,3 +1,6 @@
+# 0.6.0
+* use `cargo metadata` instead of cargo lib. This includs breaking changes.
+
 # 0.5.0
 * update cargo version
 

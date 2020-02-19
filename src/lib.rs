@@ -11,23 +11,13 @@
 //! ```
 
 #![deny(missing_docs)]
-extern crate cargo;
-#[macro_use]
-extern crate log;
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
-extern crate toml as toml_crate;
-#[macro_use]
-extern crate failure;
 
-use crate::toml_crate::Value;
-use cargo::core::Package;
-use cargo::core::Workspace;
-use cargo::util::important_paths::find_root_manifest_for_wd;
-use cargo::util::Config;
-use cargo::util::{paths, toml};
+use cargo_metadata::{Metadata, MetadataCommand, Package};
+use failure::format_err;
+use log::debug;
 use serde::de::DeserializeOwned;
+use serde::Deserialize;
+use serde_json::Value;
 
 /// Errors and related
 pub mod error {
@@ -56,29 +46,25 @@ pub struct PackConfig {
 }
 
 /// cargo-pack API
-pub struct CargoPack<'cfg> {
-    ws: Workspace<'cfg>,
+pub struct CargoPack {
     package_name: Option<String>,
     pack_config: PackConfig,
+    metadata: Metadata,
 }
 
 fn lookup(mut value: Value, path: &[&str]) -> Option<Value> {
     for key in path {
         match value {
-            Value::Table(mut hm) => {
+            Value::Object(mut hm) => match hm.remove(*key) {
                 // removing to take the ownership
-                match hm.remove(*key) {
-                    Some(v) => value = v,
-                    None => return None,
-                }
-            }
-            Value::Array(mut v) => {
-                match key.parse::<usize>().ok() {
-                    // NOTICE: may change the index
-                    Some(idx) if idx < v.len() => value = v.remove(idx),
-                    _ => return None,
-                }
-            }
+                Some(v) => value = v,
+                None => return None,
+            },
+            Value::Array(mut v) => match key.parse::<usize>().ok() {
+                // NOTICE: may change the index
+                Some(idx) if idx < v.len() => value = v.remove(idx),
+                _ => return None,
+            },
             _ => return None,
         }
     }
@@ -86,7 +72,7 @@ fn lookup(mut value: Value, path: &[&str]) -> Option<Value> {
     Some(value)
 }
 
-impl<'cfg> CargoPack<'cfg> {
+impl CargoPack {
     /// create a new CargoPack value
     ///
     /// ```ignore
@@ -94,23 +80,24 @@ impl<'cfg> CargoPack<'cfg> {
     /// let pack = CargoPack::new(&config, None);
     /// ```
 
-    pub fn new<'a, P: Into<Option<String>>>(config: &'cfg Config, package_name: P) -> Result<Self> {
+    pub fn new<P: Into<Option<String>>>(package_name: P) -> Result<Self> {
         let package_name = package_name.into();
-        let root = find_root_manifest_for_wd(config.cwd())?;
-        let ws: Workspace<'cfg> = Workspace::new(&root, config)?;
-        let pack_config: PackConfig =
-            Self::decode_from_manifest_static(&ws, package_name.as_ref().map(|s| s.as_ref()))?;
+        let metadata = MetadataCommand::new().no_deps().exec()?;
+        let pack_config: PackConfig = Self::decode_from_manifest_static(
+            &metadata,
+            package_name.as_ref().map(|s| s.as_ref()),
+        )?;
         debug!("config: {:?}", pack_config);
         Ok(CargoPack {
-            ws: ws,
-            pack_config: pack_config,
-            package_name: package_name,
+            pack_config,
+            package_name,
+            metadata,
         })
     }
 
-    /// returns the current working space of the package of `package_name`
-    pub fn ws(&self) -> &Workspace<'cfg> {
-        &self.ws
+    /// returns the Metadata value
+    pub fn metadata(&self) -> &Metadata {
+        &self.metadata
     }
 
     /// returns the PackConfig value
@@ -120,17 +107,21 @@ impl<'cfg> CargoPack<'cfg> {
 
     /// returns the `Package` value of `package_name`
     pub fn package(&self) -> Result<&Package> {
-        Self::find_package(self.ws(), self.package_name.as_ref().map(AsRef::as_ref))
+        Self::find_package(
+            self.metadata(),
+            self.package_name.as_ref().map(AsRef::as_ref),
+        )
     }
 
     fn find_package<'a, 'b>(
-        ws: &'a Workspace,
+        metadata: &'a Metadata,
         package_name: Option<&'b str>,
     ) -> Result<&'a Package> {
         if let Some(ref name) = package_name {
-            let packages = ws
-                .members()
-                .filter(|p| &*p.package_id().name() == *name)
+            let packages = metadata
+                .packages
+                .iter()
+                .filter(|p| &p.name == name)
                 .collect::<Vec<_>>();
             match packages.len() {
                 0 => return Err(format_err!("unknown package {}", name)),
@@ -138,29 +129,28 @@ impl<'cfg> CargoPack<'cfg> {
                 _ => return Err(format_err!("ambiguous name {}", name)),
             }
         } else {
-            Ok(ws.current()?)
+            match metadata.packages.len() {
+                1 => Ok(&metadata.packages[0]),
+                _ => return Err(format_err!("virtual hogehoge")),
+            }
         }
     }
 
     fn decode_from_manifest_static<T: DeserializeOwned>(
-        ws: &Workspace,
+        metadata: &Metadata,
         package_name: Option<&str>,
     ) -> Result<T> {
-        let manifest = Self::find_package(ws, package_name)?.manifest_path();
-        debug!("reading manifest: {:?}", manifest);
-
-        let contents = paths::read(manifest)?;
-        let root = toml::parse(&contents, &manifest, ws.config())?;
-        debug!("root: {:?}", root);
-        let data = lookup(root, &["package", "metadata", "pack"])
+        let package = Self::find_package(metadata, package_name)?;
+        debug!("package: {:?}", package);
+        let data = lookup(package.metadata.clone(), &["pack"])
             .expect("no package.metadata.pack found in Cargo.toml");
-        data.try_into().map_err(Into::into)
+        serde_json::from_value(data).map_err(Into::into)
     }
 
     /// decode a value from the manifest toml file.
     pub fn decode_from_manifest<'a, T: DeserializeOwned>(&self) -> Result<T> {
         let package_name = self.package_name.as_ref().map(|s| s.as_ref());
-        Self::decode_from_manifest_static(self.ws(), package_name)
+        Self::decode_from_manifest_static(self.metadata(), package_name)
     }
 
     /// returns files defined in `package.metadata.pack.files` in the Cargo.toml.
